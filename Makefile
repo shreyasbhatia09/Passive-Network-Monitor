@@ -1,7 +1,14 @@
-all:	mydump
+CC= gcc
+RM= rm -vf
+CPPFLAGS= -I.
+SRCFILES= src/mydump.cpp
+OUTPUTFILES = bin/mydump
+LIBFLAG = -lpcap
 
-mydump:
-	g++ -c src/mydump.cpp -o bin/mydump -lpcap
+.PHONY: all clean
+
+all:
+	g++  -I.  $(SRCFILES) -o $(OUTPUTFILES) $(LIBFLAG)
 
 clean:
-	rm bin/mydump
+	$(RM) $(OUTPUTFILES)
