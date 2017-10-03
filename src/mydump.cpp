@@ -200,6 +200,24 @@ void printProtocolData(string protocol, u_char *payload ,int protocolsize)
         print_payload(payload, protocolsize);
 }
 
+int stringCheck(char *payload, char *str,int sizePayload)
+{
+
+    if(str[0]==0)
+    {
+        cout<<"ignore"<<endl;
+        return 0;
+    }
+
+    char stringcheck[sizePayload];
+    strncpy(stringcheck, (char *)payload, sizePayload);
+
+    if (strstr(stringcheck, (char *)str) == NULL)
+    {
+            return 1;
+    }
+
+}
 
 void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet)
 {
@@ -210,21 +228,12 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
     string protocol;
     int sizePayload;
 
+
     if(sizeIpHeader < 20)
     {
-        cout<<"Invalid IP Header Length"<<endl;
+        //cout<<"Invalid IP Header Length"<<endl;
         return;
     }
-
-    printf("type %x",ntohs(ethernetHeader->ether_type));
-    string time = ctime((const time_t *)&packet_header->ts.tv_sec);
-    time = time.substr(0,time.size()-1);
-    cout<<time<<" ";
-    printMACAddress(ethernetHeader->ether_shost);
-    cout<< " -> ";
-    printMACAddress(ethernetHeader->ether_dhost);
-    cout<<" "<<inet_ntoa(ipHeader->ip_src)<< " " << inet_ntoa(ipHeader->ip_dst) <<" ";
-    cout<<" "<<"len "<<ntohs(ipHeader->ip_len)<<" ";
 
 
 
@@ -237,6 +246,7 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
 			int sizeTcp = TH_OFF(tcp)*4;
             payload = (u_char *)(packet + SIZE_ETHERNET + sizeIpHeader + sizeTcp);
             sizePayload = ntohs(ipHeader->ip_len) - (sizeTcp+sizeIpHeader);
+
             if(sizeTcp<20)
             {
                 cout<<"Invalid TCP Header"<<endl;
@@ -246,10 +256,10 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
         }
 		case IPPROTO_UDP:
         {
-
 			protocol = "UDP";
 			payload = (u_char *)(packet + SIZE_ETHERNET + sizeIpHeader + SIZE_UDP);
             sizePayload = ntohs(ipHeader->ip_len) - (SIZE_UDP + sizeIpHeader);
+
 			break;
         }
 		case IPPROTO_ICMP:
@@ -257,6 +267,7 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
             protocol = "ICMP";
             payload = (u_char *)(packet + SIZE_ETHERNET + sizeIpHeader + SIZE_ICMP);
             sizePayload = ntohs(ipHeader->ip_len) - (SIZE_ICMP + sizeIpHeader);
+
             break;
         }
 
@@ -268,9 +279,24 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
             break;
         }
 	}
-	if(sizePayload)
-            printProtocolData(protocol, payload,sizePayload);
-	cout<<endl;
+    //if (stringCheck((char *)payload, (char *)args, sizePayload)==0)
+
+    if (args==NULL || (strstr((char *)payload, (char *)args)!=NULL && args!=NULL))
+    {
+        string time = ctime((const time_t *)&packet_header->ts.tv_sec);
+        time = time.substr(0,time.size()-1);
+        cout<<time<<" ";
+        printMACAddress(ethernetHeader->ether_shost);
+        cout<< " -> ";
+        printMACAddress(ethernetHeader->ether_dhost);
+        printf("type %x",ntohs(ethernetHeader->ether_type));
+        cout<<" "<<inet_ntoa(ipHeader->ip_src)<< " " << inet_ntoa(ipHeader->ip_dst) <<" ";
+        cout<<" "<<"len "<<ntohs(ipHeader->ip_len)<<" ";
+        if(sizePayload)
+                printProtocolData(protocol, payload, sizePayload);
+        cout<<endl;
+    }
+
 }
 
 string epochToLocalTime(long long int)
@@ -299,34 +325,49 @@ int main(int argc, char **argv)
     struct bpf_program fp;
     bpf_u_int32 net;
     bpf_u_int32 mask;
-
+    pcap_t *handle;
     char *expression=NULL;
     struct pcap_pkthdr header;
+    char *string_cmp;
+
+    string_cmp = new char[options["stringMatch"].length() + 1];
+    strcpy(string_cmp, options["stringMatch"].c_str());
+
+    char *fileName = new char[options["fileName"].length() + 1];
+    strcpy(fileName, options["fileName"].c_str());
+
 
     if(argc%2 ==0)
         expression = argv[argc-1];
 
     if (options["interface"] == "")
     {
-        cout<<"Taking default interface "<<endl;
-        device = pcap_lookupdev(errbuf);
-        isNULL(device)
+        if(options["fileName"] == "")
         {
-            cout<<"Default Device not found"<<endl;
-            return 0;
+            cout<<"Taking default interface "<<endl;
+            device = pcap_lookupdev(errbuf);
+            isNULL(device)
+            {
+                cout<<"Default Device not found"<<endl;
+                return 0;
+            }
+            else
+                cout<<"Found default interface: "<<device<<endl;
+            handle = pcap_open_live(device, BUFSIZ, 1, 1000, errbuf);
         }
-
         else
-            cout<<"Found default interface: "<<device<<endl;
+        {
+             handle = pcap_open_offline(fileName, errbuf);
+        }
     }
     else
     {
         device = new char[options["interface"].length() + 1];
         strcpy(device, options["interface"].c_str());
         cout<<"Choosing interface as "<<device<<endl;
+        handle = pcap_open_live(device, BUFSIZ, 1, 1000, errbuf);
     }
-    pcap_t *handle;
-    handle = pcap_open_live(device, BUFSIZ, 1, 1000, errbuf);
+
     isNULL(handle)
     {
         cout<<"Cannot open the device :"<<errbuf<<endl;
@@ -351,6 +392,6 @@ int main(int argc, char **argv)
     }
 
     const u_char *packet;
-    pcap_loop(handle , -1 , packet_handler , NULL);
+    pcap_loop(handle , -1 , packet_handler , (u_char *)string_cmp);
 
 }
