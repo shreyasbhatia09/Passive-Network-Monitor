@@ -234,7 +234,8 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
         return;
     }
 
-
+    u_short sport=-1;
+    u_short dport=-1;
 
     switch(ipHeader->ip_p)
     {
@@ -251,15 +252,19 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
                 cout<<"Invalid TCP Header"<<endl;
                 return;
             }
+            sport = tcp->th_sport;
+            dport = tcp->th_dport;
 			break;
         }
 		case IPPROTO_UDP:
         {
 			protocol = "UDP";
+			struct sniff_udp *udp = (struct sniff_udp*)(packet + SIZE_ETHERNET + sizeIpHeader);
 			payload = (u_char *)(packet + SIZE_ETHERNET + sizeIpHeader + SIZE_UDP);
             sizePayload = ntohs(ipHeader->ip_len) - (SIZE_UDP + sizeIpHeader);
-
-			break;
+            sport = udp->uh_sport;
+            dport = udp->uh_dport;
+            break;
         }
 		case IPPROTO_ICMP:
         {
@@ -286,9 +291,12 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
         time = time.substr(0,time.size()-1);
         cout<<time<<" ";
         printMACAddress(ethernetHeader->ether_shost);
+        if(sport!=-1) cout<<":"<<sport;
         cout<< " -> ";
         printMACAddress(ethernetHeader->ether_dhost);
+        if(dport!=-1) cout<<":"<<dport<<" ";
         printf("type %x",ntohs(ethernetHeader->ether_type));
+
         cout<<" "<<inet_ntoa(ipHeader->ip_src)<< " " << inet_ntoa(ipHeader->ip_dst) <<" ";
         cout<<" "<<"len "<<ntohs(ipHeader->ip_len)<<" ";
         if(sizePayload)
