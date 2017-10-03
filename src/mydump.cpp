@@ -205,7 +205,6 @@ int stringCheck(char *payload, char *str,int sizePayload)
 
     if(str[0]==0)
     {
-        cout<<"ignore"<<endl;
         return 0;
     }
 
