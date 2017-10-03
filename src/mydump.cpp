@@ -76,7 +76,23 @@ struct sniff_tcp {
         u_short th_urp;                 /* urgent pointer */
 };
 
+/* UDP header */
+
+struct sniff_udp {
+         u_short uh_sport;               /* source port */
+         u_short uh_dport;               /* destination port */
+         u_short uh_ulen;                /* udp length */
+         u_short uh_sum;                 /* udp checksum */
+
+};
+
+#define SIZE_UDP        8               /* length of UDP header */
+#define SIZE_ICMP        8               /* length of ICMP header */
+
 /// PROTOCOL ENDS HERE
+
+/// HELPER FUNCTIONS ///
+
 
 void printMACAddress(u_char *ether_host)
 {
@@ -85,11 +101,114 @@ void printMACAddress(u_char *ether_host)
         printf("%x%s",*ptr++, (i==ETHER_ADDR_LEN-1)?"":":");
 }
 
-void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet_body)
+/// REFERENCE FROM http://www.tcpdump.org/sniffex.c
+void print_hex_ascii_line( u_char *payload, int len, int offset)
 {
-    struct sniff_ethernet *ethernetHeader = (struct sniff_ethernet *)(packet_body);
-    struct sniff_ip *ipHeader = (struct sniff_ip *) (packet_body+SIZE_ETHERNET);
+
+	int i;
+	int gap;
+    u_char *ch;
+
+	/* offset */
+	printf("%05d   ", offset);
+
+	/* hex */
+	ch = payload;
+	for(i = 0; i < len; i++) {
+		printf("%02x ", *ch);
+		ch++;
+		/* print extra space after 8th byte for visual aid */
+		if (i == 7)
+			printf(" ");
+	}
+	/* print space to handle line less than 8 bytes */
+	if (len < 8)
+		printf(" ");
+
+	/* fill hex gap with spaces if not full line */
+	if (len < 16) {
+		gap = 16 - len;
+		for (i = 0; i < gap; i++) {
+			printf("   ");
+		}
+	}
+	printf("   ");
+
+	/* ascii (if printable) */
+	ch = payload;
+	for(i = 0; i < len; i++) {
+		if (isprint(*ch))
+			printf("%c", *ch);
+		else
+			printf(".");
+		ch++;
+	}
+
+	printf("\n");
+
+return;
+}
+
+/*
+ * print packet payload data (avoid printing binary data)
+ */
+void print_payload(u_char *payload, int len)
+{
+
+	int len_rem = len;
+	int line_width = 16;			/* number of bytes per line */
+	int line_len;
+	int offset = 0;					/* zero-based offset counter */
+    u_char *ch = payload;
+
+	if (len <= 0)
+		return;
+
+	/* data fits on one line */
+	if (len <= line_width) {
+		print_hex_ascii_line(ch, len, offset);
+		return;
+	}
+
+	/* data spans multiple lines */
+	for ( ;; ) {
+		/* compute current line length */
+		line_len = line_width % len_rem;
+		/* print line */
+		print_hex_ascii_line(ch, line_len, offset);
+		/* compute total remaining */
+		len_rem = len_rem - line_len;
+		/* shift pointer to remaining bytes to print */
+		ch = ch + line_len;
+		/* add offset */
+		offset = offset + line_width;
+		/* check if we have line width chars or less */
+		if (len_rem <= line_width) {
+			/* print last line and get out */
+			print_hex_ascii_line(ch, len_rem, offset);
+			break;
+		}
+	}
+
+return;
+}
+
+void printProtocolData(string protocol, u_char *payload ,int protocolsize)
+{
+    cout<<protocol<<endl;
+    if(protocolsize)
+        print_payload(payload, protocolsize);
+}
+
+
+void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet)
+{
+    struct sniff_ethernet *ethernetHeader = (struct sniff_ethernet *)(packet);
+    struct sniff_ip *ipHeader = (struct sniff_ip *) (packet+SIZE_ETHERNET);
     u_int sizeIpHeader = IP_HL(ipHeader)*4;
+    u_char *payload;
+    string protocol;
+    int sizePayload;
 
     if(sizeIpHeader < 20)
     {
@@ -97,30 +216,61 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
         return;
     }
 
+    printf("type %x",ntohs(ethernetHeader->ether_type));
     string time = ctime((const time_t *)&packet_header->ts.tv_sec);
     time = time.substr(0,time.size()-1);
     cout<<time<<" ";
     printMACAddress(ethernetHeader->ether_shost);
     cout<< " -> ";
     printMACAddress(ethernetHeader->ether_dhost);
+    cout<<" "<<inet_ntoa(ipHeader->ip_src)<< " " << inet_ntoa(ipHeader->ip_dst) <<" ";
+    cout<<" "<<"len "<<ntohs(ipHeader->ip_len)<<" ";
 
-    switch(ipHeader->ip_p) {
+
+
+    switch(ipHeader->ip_p)
+    {
 		case IPPROTO_TCP:
-			cout<<"TCP";
+        {
+		    protocol = "TCP";
+			struct sniff_tcp *tcp = (struct sniff_tcp*)(packet + SIZE_ETHERNET + sizeIpHeader);
+			int sizeTcp = TH_OFF(tcp)*4;
+            payload = (u_char *)(packet + SIZE_ETHERNET + sizeIpHeader + sizeTcp);
+            sizePayload = ntohs(ipHeader->ip_len) - (sizeTcp+sizeIpHeader);
+            if(sizeTcp<20)
+            {
+                cout<<"Invalid TCP Header"<<endl;
+                return;
+            }
 			break;
+        }
 		case IPPROTO_UDP:
-			cout<<"UDP";
-			return;
+        {
+
+			protocol = "UDP";
+			payload = (u_char *)(packet + SIZE_ETHERNET + sizeIpHeader + SIZE_UDP);
+            sizePayload = ntohs(ipHeader->ip_len) - (SIZE_UDP + sizeIpHeader);
+			break;
+        }
 		case IPPROTO_ICMP:
-			cout<<"ICMP";
-			return;
-		case IPPROTO_IP:
-			cout<<"IP";
-			return;
+        {
+            protocol = "ICMP";
+            payload = (u_char *)(packet + SIZE_ETHERNET + sizeIpHeader + SIZE_ICMP);
+            sizePayload = ntohs(ipHeader->ip_len) - (SIZE_ICMP + sizeIpHeader);
+            break;
+        }
+
 		default:
-			cout<<"unknown";
-			return;
+        {
+            protocol = "UNKNOWN";
+            payload = (u_char *)(packet + SIZE_ETHERNET + sizeIpHeader );
+            sizePayload = ntohs(ipHeader->ip_len) - (sizeIpHeader);
+            break;
+        }
 	}
+	if(sizePayload)
+            printProtocolData(protocol, payload,sizePayload);
+	cout<<endl;
 }
 
 string epochToLocalTime(long long int)
