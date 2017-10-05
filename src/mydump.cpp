@@ -10,7 +10,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-
+#define	ETHERTYPE_PUP	0x0200		/* PUP protocol */
+#define	ETHERTYPE_IP	0x0800		/* IP protocol */
+#define ETHERTYPE_ARP	0x0806		/* Addr. resolution protocol */
 #define isNULL(x) if(x==NULL)
 using namespace std;
 
@@ -98,7 +100,7 @@ void printMACAddress(u_char *ether_host)
 {
     u_char *ptr = ether_host;
     for (int i=0;i<ETHER_ADDR_LEN;i++)
-        printf("%x%s",*ptr++, (i==ETHER_ADDR_LEN-1)?"":":");
+        printf("%02X%s",*ptr++, (i==ETHER_ADDR_LEN-1)?"":":");
 }
 
 /// REFERENCE FROM http://www.tcpdump.org/sniffex.c
@@ -287,6 +289,7 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
 
     if (args==NULL || (strstr((char *)payload, (char *)args)!=NULL && args!=NULL))
     {
+
         string time = ctime((const time_t *)&packet_header->ts.tv_sec);
         time = time.substr(0,time.size()-1);
         cout<<time<<" ";
@@ -295,8 +298,12 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
         cout<< " -> ";
         printMACAddress(ethernetHeader->ether_dhost);
         if(dport!=-1) cout<<":"<<dport<<" ";
-        printf("type %x",ntohs(ethernetHeader->ether_type));
-
+        printf("type 0x%x",ntohs(ethernetHeader->ether_type));
+        if(ntohs(ethernetHeader->ether_type) == ETHERTYPE_ARP)
+        {
+            cout<<"ARP Packet"<<endl;
+            return;
+        }
         cout<<" "<<inet_ntoa(ipHeader->ip_src)<< " " << inet_ntoa(ipHeader->ip_dst) <<" ";
         cout<<" "<<"len "<<ntohs(ipHeader->ip_len)<<" ";
         if(sizePayload)
