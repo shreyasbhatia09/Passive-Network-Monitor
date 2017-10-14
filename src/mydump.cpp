@@ -108,7 +108,7 @@ struct sniff_udp
 
 /// HELPER FUNCTIONS ///
 
-
+/// Function to print the mac address from ether host
 void printMACAddress(u_char *ether_host)
 {
     u_char *ptr = ether_host;
@@ -168,9 +168,8 @@ void print_hex_ascii_line( u_char *payload, int len, int offset)
     return;
 }
 
-/*
- * print packet payload data (avoid printing binary data)
- */
+
+///print packet payload data (avoid printing binary data)
 void print_payload(u_char *payload, int len)
 {
 
@@ -215,19 +214,22 @@ void print_payload(u_char *payload, int len)
     return;
 }
 
+/// print protocol data if size not zero
 void printProtocolData(string protocol, u_char *payload,int protocolsize)
 {
     cout<<protocol<<endl;
+    // if size is greater than 0
     if(protocolsize)
         print_payload(payload, protocolsize);
 }
 
+/// Function to check wether a payload consists of string
+/// This function handles the case when strstr encounters EOF
 int stringCheck(char *payload, char *str,int sizePayload)
 {
     if(str[0]==0)
-    {
         return 0;
-    }
+
 
     char stringcheck[sizePayload];
     strncpy(stringcheck, (char *)payload, sizePayload);
@@ -243,6 +245,7 @@ int stringCheck(char *payload, char *str,int sizePayload)
     return 0;
 }
 
+/// Packet Handler
 void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet)
 {
     u_char *payload;
@@ -252,16 +255,19 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
     struct sniff_ethernet *ethernetHeader = (struct sniff_ethernet *)(packet);
     struct sniff_ip *ipHeader = (struct sniff_ip *) (packet+SIZE_ETHERNET);
     u_int sizeIpHeader = IP_HL(ipHeader)*4;
-    if(sizeIpHeader < 20)
-    {
-        return;
-    }
 
+    // If invalid packet then return
+    if(sizeIpHeader < 20)
+        return;
+
+    // initilize port values to -1.
     u_short sport=-1;
     u_short dport=-1;
 
+    // Switch case to handle different types of protocols
     switch(ipHeader->ip_p)
     {
+        // TCP PROTOCOL
         case IPPROTO_TCP:
         {
             protocol = "TCP";
@@ -279,6 +285,7 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
             dport = tcp->th_dport;
             break;
         }
+        // UDP PROTOCOL
         case IPPROTO_UDP:
         {
             protocol = "UDP";
@@ -289,15 +296,15 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
             dport = udp->uh_dport;
             break;
         }
+        // ICMP PROTOCOL
         case IPPROTO_ICMP:
         {
             protocol = "ICMP";
             payload = (u_char *)(packet + SIZE_ETHERNET + sizeIpHeader + SIZE_ICMP);
             sizePayload = ntohs(ipHeader->ip_len) - (SIZE_ICMP + sizeIpHeader);
-
             break;
         }
-
+        // OTHER PROTOCOLS
         default:
         {
             protocol = "UNKNOWN";
@@ -307,7 +314,7 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
         }
     }
 
-
+    // if we have to find a string match inside the payload
     if(args!=NULL)
     {
 
@@ -316,6 +323,8 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
         //To handle non printable characters
         for(int i = 0; i < strlen(stringcheck); i++)
         {
+            // replace every non printable character with 'ESC'
+            // so that strstr doesnt fail when it encounters EOF
             if(!isprint(stringcheck[i]))
                 stringcheck[i]=u_char(27);
         }
@@ -323,44 +332,44 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
             return;
 
     }
-    //if (args==NULL || (stringCheck((char *)payload, (char *)args, sizePayload)) && args!=NULL))
+    // PRINTING BEGINS FROM HERE
+    struct tm * time = localtime((const time_t *)&packet_header->ts.tv_sec);
+    char timeBuffer[TIME_BUFFER];
+
+    strftime(timeBuffer, TIME_BUFFER, "%F %H:%M:%S", time);
+    //Print time
+    cout<<timeBuffer<<" ";
+    //Print mac address
+    printMACAddress(ethernetHeader->ether_shost);
+    cout<< " -> ";
+    printMACAddress(ethernetHeader->ether_dhost);
+    //print ethertype
+    printf("type 0x%x",ntohs(ethernetHeader->ether_type));
+    //print packet length
+    cout<<" "<<"len "<<(packet_header->len)<<" ";
+    //handle other type packets
+    if(ntohs(ethernetHeader->ether_type) == ETHERTYPE_ARP)
     {
-
-        struct tm * time = localtime((const time_t *)&packet_header->ts.tv_sec);
-        char timeBuffer[TIME_BUFFER];
-        strftime(timeBuffer, TIME_BUFFER, "%F %H:%M:%S", time);
-        //Print time
-        cout<<timeBuffer<<" ";
-        //Print mac address
-        printMACAddress(ethernetHeader->ether_shost);
-        cout<< " -> ";
-        printMACAddress(ethernetHeader->ether_dhost);
-        //print ethertype
-        printf("type 0x%x",ntohs(ethernetHeader->ether_type));
-        //print packet length
-        cout<<" "<<"len "<<(packet_header->len)<<" ";
-        //handle other type packets
-        if(ntohs(ethernetHeader->ether_type) == ETHERTYPE_ARP)
-        {
-            cout<<"ARP Packet"<<endl;
-            return;
-        }
-        //Print IP address
-        cout<<endl;
-        cout<<inet_ntoa(ipHeader->ip_src);
-        if(sport!=-1) cout<<":"<<ntohs(sport);
-
-        cout<<" " << inet_ntoa(ipHeader->ip_dst);
-        if(dport!=-1) cout<<":"<<ntohs(dport)<<" ";
-
-
-        if(sizePayload)
-            printProtocolData(protocol, payload, sizePayload);
-        cout<<endl;
+        cout<<"ARP Packet"<<endl;
+        return;
     }
+    // Print a new line to format the output
+    cout<<endl;
+
+    //Print IP address with ports
+    cout<<inet_ntoa(ipHeader->ip_src);
+    if(sport!=-1) cout<<":"<<ntohs(sport);
+
+    cout<<" " << inet_ntoa(ipHeader->ip_dst);
+    if(dport!=-1) cout<<":"<<ntohs(dport)<<" ";
+
+    // if size is non zero print the payload
+    if(sizePayload)
+        printProtocolData(protocol, payload, sizePayload);
+    cout<<endl;
 
 }
-
+/// Convert to human readable time format
 string epochToLocalTime(long long int)
 {
     time_t rawtime;
@@ -386,6 +395,7 @@ int main(int argc, char **argv)
     string expressionString;
     extern char * optarg;
     extern int optind;
+    // using getopts to get the arguments
     while ((c = getopt (argc, argv, "r:s:i:")) != -1)
         switch (c)
         {
@@ -402,13 +412,14 @@ int main(int argc, char **argv)
                 fprintf (stderr, "Unknown option character `\\x%x'.\n", optopt);
                 break;
         }
-
+    // append the the rest of the argument to make the expression string
     for ( ; optind < argc; optind++)
             expressionString+=argv[optind];
 
-
+    // if interface is NULL
     isNULL(interface)
     {
+        // if filename is NULL
         isNULL(fileName)
         {
             cout<<"Taking default interface "<<endl;
@@ -433,7 +444,7 @@ int main(int argc, char **argv)
         cout<<"Choosing interface as "<<device<<endl;
         handle = pcap_open_live(device, BUFSIZ, 1, 1000, errbuf);
     }
-
+    // if handle is null
     isNULL(handle)
     {
         cout<<"Cannot open the device :"<<errbuf<<endl;
@@ -444,6 +455,7 @@ int main(int argc, char **argv)
         cout<<device<<" is not an Ethernet\n"<<endl;
         exit(EXIT_FAILURE);
     }
+    // if there is an expression defined we need to compile and filter it
     if(expressionString.length()>0)
     {
         pcap_lookupnet(device, &net, &mask, errbuf);
@@ -460,8 +472,8 @@ int main(int argc, char **argv)
             return(2);
         }
     }
-
     const u_char *packet;
+
     pcap_loop(handle, -1, packet_handler, (u_char *)stringMatch);
 
 }
