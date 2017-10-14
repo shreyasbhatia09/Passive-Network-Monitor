@@ -220,9 +220,9 @@ int stringCheck(char *payload, char *str,int sizePayload)
             stringcheck[i]=char(27);
     }
     if (strstr(stringcheck, (char *)str) == NULL)
-    {
             return 1;
-    }
+
+    return 0;
 }
 
 void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet)
@@ -295,20 +295,31 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
         struct tm * time = localtime((const time_t *)&packet_header->ts.tv_sec);
         char timeBuffer[TIME_BUFFER];
         strftime(timeBuffer, TIME_BUFFER, "%F %H:%M:%S", time);
+        //Print time
         cout<<timeBuffer<<" ";
+        //Print mac address
         printMACAddress(ethernetHeader->ether_shost);
-        if(sport!=-1) cout<<":"<<sport;
         cout<< " -> ";
         printMACAddress(ethernetHeader->ether_dhost);
-        if(dport!=-1) cout<<":"<<dport<<" ";
+        //print ethertype
         printf("type 0x%x",ntohs(ethernetHeader->ether_type));
+        //print packet length
+        cout<<" "<<"len "<<(packet_header->len)<<" ";
+        //handle other type packets
         if(ntohs(ethernetHeader->ether_type) == ETHERTYPE_ARP)
         {
             cout<<"ARP Packet"<<endl;
             return;
         }
-        cout<<" "<<inet_ntoa(ipHeader->ip_src)<< " " << inet_ntoa(ipHeader->ip_dst) <<" ";
-        cout<<" "<<"len "<<(packet_header->len)<<" ";
+        //Print IP address
+        cout<<endl;
+        cout<<inet_ntoa(ipHeader->ip_src);
+        if(sport!=-1) cout<<":"<<sport;
+
+        cout<<" " << inet_ntoa(ipHeader->ip_dst);
+        if(dport!=-1) cout<<":"<<dport<<" ";
+
+
         if(sizePayload)
                 printProtocolData(protocol, payload, sizePayload);
         cout<<endl;
