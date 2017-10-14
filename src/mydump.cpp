@@ -5,6 +5,7 @@
 #include <vector>
 #include <pcap.h>
 #include <cstdio>
+#include <time.h>
 #include <string.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -14,6 +15,7 @@
 #define	ETHERTYPE_IP	0x0800		/* IP protocol */
 #define ETHERTYPE_ARP	0x0806		/* Addr. resolution protocol */
 #define isNULL(x) if(x==NULL)
+#define TIME_BUFFER 100
 using namespace std;
 
 /// PROTOCOL HEADERS START FROM HERE
@@ -204,7 +206,6 @@ void printProtocolData(string protocol, u_char *payload ,int protocolsize)
 
 int stringCheck(char *payload, char *str,int sizePayload)
 {
-
     if(str[0]==0)
     {
         return 0;
@@ -212,27 +213,29 @@ int stringCheck(char *payload, char *str,int sizePayload)
 
     char stringcheck[sizePayload];
     strncpy(stringcheck, (char *)payload, sizePayload);
-
+    //To handle non printable characters
+    for(int i = 0;i < strlen(stringcheck);i++)
+    {
+        if(!isprint(stringcheck[i]))
+            stringcheck[i]=char(27);
+    }
     if (strstr(stringcheck, (char *)str) == NULL)
     {
             return 1;
     }
-
 }
 
 void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, const u_char *packet)
 {
-    struct sniff_ethernet *ethernetHeader = (struct sniff_ethernet *)(packet);
-    struct sniff_ip *ipHeader = (struct sniff_ip *) (packet+SIZE_ETHERNET);
-    u_int sizeIpHeader = IP_HL(ipHeader)*4;
     u_char *payload;
     string protocol;
     int sizePayload;
 
-
+    struct sniff_ethernet *ethernetHeader = (struct sniff_ethernet *)(packet);
+    struct sniff_ip *ipHeader = (struct sniff_ip *) (packet+SIZE_ETHERNET);
+    u_int sizeIpHeader = IP_HL(ipHeader)*4;
     if(sizeIpHeader < 20)
     {
-        //cout<<"Invalid IP Header Length"<<endl;
         return;
     }
 
@@ -285,14 +288,14 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
             break;
         }
 	}
-    //if (stringCheck((char *)payload, (char *)args, sizePayload)==0)
 
     if (args==NULL || (strstr((char *)payload, (char *)args)!=NULL && args!=NULL))
     {
 
-        string time = ctime((const time_t *)&packet_header->ts.tv_sec);
-        time = time.substr(0,time.size()-1);
-        cout<<time<<" ";
+        struct tm * time = localtime((const time_t *)&packet_header->ts.tv_sec);
+        char timeBuffer[TIME_BUFFER];
+        strftime(timeBuffer, TIME_BUFFER, "%F %H:%M:%S", time);
+        cout<<timeBuffer<<" ";
         printMACAddress(ethernetHeader->ether_shost);
         if(sport!=-1) cout<<":"<<sport;
         cout<< " -> ";
@@ -305,7 +308,7 @@ void packet_handler( u_char *args, const struct pcap_pkthdr *packet_header, cons
             return;
         }
         cout<<" "<<inet_ntoa(ipHeader->ip_src)<< " " << inet_ntoa(ipHeader->ip_dst) <<" ";
-        cout<<" "<<"len "<<ntohs(ipHeader->ip_len)<<" ";
+        cout<<" "<<"len "<<(packet_header->len)<<" ";
         if(sizePayload)
                 printProtocolData(protocol, payload, sizePayload);
         cout<<endl;
@@ -349,7 +352,6 @@ int main(int argc, char **argv)
 
     char *fileName = new char[options["fileName"].length() + 1];
     strcpy(fileName, options["fileName"].c_str());
-
 
     if(argc%2 ==0)
         expression = argv[argc-1];
